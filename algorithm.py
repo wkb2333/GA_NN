@@ -29,13 +29,13 @@ class Child(nn.Module):
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.net = nn.Sequential()
-        self.init_net()
+        self.__init_net()
 
     def forward(self, X):
         X = self.net(X)
         return X
 
-    def init_net(self):
+    def __init_net(self):
         # 进行网络结构初始化，进行必要约束
         # 考虑每一层，第一层卷积输入必然为1，最后一层线性输出必然为10,
         # 其余层均可以随机初始化并且加入遗传
@@ -48,13 +48,13 @@ class Child(nn.Module):
         self.net.add_module('linear', nn.Sequential())
 
         for idx in range(self.cp_num):
-            self.create_cp(idx)
+            self.__create_cp(idx)
         for _ in range(self.fc_num):
             idx = len(self.fc_li)
-            self.create_fc(idx)
+            self.__create_fc(idx)
         self.net.to(self.device)
 
-    def cal_input_size(self):
+    def __cal_input_size(self):
         """
         计算网络从开始到此的输入图像大小
         用于确定当前层的kernel_size
@@ -78,14 +78,18 @@ class Child(nn.Module):
             exec(f'self.net.conv_pool.conv{idx+1}.in_channels = self.net.conv_pool.conv{idx}.out_channels')
             for layer in self.net.conv_pool.children():
                 if type(layer) is nn.modules.batchnorm.BatchNorm2d:
-                    exec(f'self.net.conv_pool.norm{idx}.in_channels = nn.BatchNorm2d(self.net.conv_pool.conv{idx}.out_channels)')
+                    try:
+                        exec(f'self.net.conv_pool.norm{idx}.in_channels = '
+                             f'nn.BatchNorm2d(self.net.conv_pool.conv{idx}.out_channels)')
+                    except:
+                        pass
         for idx in range(1, len(self.fc_li)):
             exec(f'self.net.linear.linear{idx}.in_features = self.net.linear.linear{idx-1}.out_features')
-        size = self.cal_input_size()
+        size = self.__cal_input_size()
         layer = eval(f'self.net.conv_pool.{self.conv_li[-1]}')
         self.net.linear.linear0.in_features = layer.out_channels * size * size
 
-    def adapt_attr(self, add_type, idx):
+    def __adapt_attr(self, add_type, idx):
         # 需要准确定位当前层所在位置，传入index 提取出特定类型进行定位
         if add_type is nn.modules.conv.Conv2d:
             if len(self.conv_li) == 0:
@@ -96,17 +100,17 @@ class Child(nn.Module):
             pass
         if add_type is nn.modules.linear.Linear:
             if len(self.fc_li) == 0:
-                size = self.cal_input_size()
+                size = self.__cal_input_size()
                 layer = eval(f'self.net.conv_pool.{self.conv_li[-1]}')
                 return layer.out_channels * size * size
             else:
                 return eval(f'self.net.linear.linear{idx - 1}.out_features')
 
-    def create_conv(self, idx):
-        if self.cal_input_size() < 5:
+    def __create_conv(self, idx):
+        if self.__cal_input_size() < 5:
             return
         out_channels = np.random.choice(self.conv_args['out_channels'])
-        kernel_size = np.random.choice(range(1, self.cal_input_size(), 2))
+        kernel_size = np.random.choice(range(1, self.__cal_input_size(), 2))
         if idx == 0:
             kernel_size = np.random.choice(self.conv_args['kernel_size'])
             self.net.conv_pool.add_module('conv' + str(idx), nn.Conv2d(1, out_channels, kernel_size))
@@ -115,18 +119,18 @@ class Child(nn.Module):
                 self.net.conv_pool.add_module('norm' + str(idx), nn.BatchNorm2d(out_channels))
             self.net.conv_pool.add_module('activate' + str(idx), nn.ReLU())
         else:
-            last_out = self.adapt_attr(nn.modules.conv.Conv2d, idx)
+            last_out = self.__adapt_attr(nn.modules.conv.Conv2d, idx)
             self.net.conv_pool.add_module('conv' + str(idx), nn.Conv2d(last_out, out_channels, kernel_size))
             self.conv_li.append('conv' + str(idx))
             if np.random.rand() > 0.5:
                 self.net.conv_pool.add_module('norm' + str(idx), nn.BatchNorm2d(out_channels))
             self.net.conv_pool.add_module('activate' + str(idx), nn.ReLU())
 
-    def create_pool(self, idx):
+    def __create_pool(self, idx):
         # 这里限制最小池化尺寸
-        if self.cal_input_size() < 5:
+        if self.__cal_input_size() < 5:
             return
-        output_size = np.random.choice(range(3, self.cal_input_size()))
+        output_size = np.random.choice(range(3, self.__cal_input_size()))
         if np.random.rand() > 0.5:
             self.net.conv_pool.add_module('pool' + str(idx), nn.AdaptiveMaxPool2d((output_size, output_size)))
             self.pool_li.append('pool' + str(idx))
@@ -134,8 +138,8 @@ class Child(nn.Module):
             self.net.conv_pool.add_module('pool' + str(idx), nn.AdaptiveAvgPool2d((output_size, output_size)))
             self.pool_li.append('pool' + str(idx))
 
-    def create_fc(self, idx):
-        last_out = self.adapt_attr(nn.modules.linear.Linear, idx)
+    def __create_fc(self, idx):
+        last_out = self.__adapt_attr(nn.modules.linear.Linear, idx)
         out_features = np.random.choice(self.line_args)
         # if idx == 0:
         #     in_features = self.net.conv_pool[-1].output_size**2
@@ -154,19 +158,19 @@ class Child(nn.Module):
                 self.net.linear.add_module('norm' + str(idx), nn.BatchNorm1d(out_features))
             self.net.linear.add_module('activate' + str(idx), nn.ReLU())
 
-    def create_cp(self, idx):
+    def __create_cp(self, idx):
         if idx == 0:
             module_num = len(self.conv_li)
-            self.create_conv(module_num)
+            self.__create_conv(module_num)
         elif idx == self.cp_num - 1:
             module_num = len(self.pool_li)
-            self.create_pool(module_num)
+            self.__create_pool(module_num)
         elif np.random.rand() > 0.5:
             module_num = len(self.conv_li)
-            self.create_conv(module_num)
+            self.__create_conv(module_num)
         else:
             module_num = len(self.pool_li)
-            self.create_pool(module_num)
+            self.__create_pool(module_num)
 
     def mutate(self):
         # 这里变异只进行修改，不进行增删
@@ -182,11 +186,11 @@ class Child(nn.Module):
                 if (module_type + str(idx+1)) in self.conv_li:
                     exec(f"self.net.conv_pool.{module_type + str(idx+1)}.in_channels"
                          f" = self.net.conv_pool.{mutate}.out_channels")
-            elif module_type == 'pool':
+            elif module_type == 'pool' and self.__cal_input_size() >= 4:
                 # 此处变异只使用MaxPooling
-                output_size = np.random.choice(range(3, self.cal_input_size()))
+                output_size = np.random.choice(range(3, self.__cal_input_size()))
                 exec(f"self.net.conv_pool.{mutate}"
-                     f" = nn.AdaptiveMaxPool2d((output_size, output_size))")
+                     f" = nn.AdaptiveMaxPool2d(({output_size}, {output_size}))")
         else:
             mutate = np.random.choice(self.fc_li[0:-1])
             idx = int(mutate[-1])
@@ -195,15 +199,19 @@ class Child(nn.Module):
 
         self.net_format()
 
-    def fitness_eval(self, train_loader, test_loader, epoch=20):
+    def fitness_eval(self,
+                     train_loader ,
+                     test_loader,
+                     epoch=20, **kwargs):
         # 训练模型
         with tqdm(total=epoch) as pbar:
-            pbar.set_description(f'total parameters: {sum(p.numel() for p in self.net.parameters())}')
+            pbar.set_description(f"Index={kwargs['idx']},"
+                                 f"total parameters: {sum(p.numel() for p in self.net.parameters())/1000}k")
             for batch_idx, (data, target) in enumerate(train_loader):
                 # 将数据转换为模型需要的格式
                 if batch_idx >= epoch:
                     break
-                data, target = data.cuda(), target.cuda()
+                data, target = data.to(self.device), target.to(self.device)
                 # 前向传播
                 output = self.net(data)
                 # 计算损失
@@ -220,7 +228,7 @@ class Child(nn.Module):
                 with torch.no_grad():
                     for data_test, target_test in test_loader:
                         # 将数据转换为模型需要的格式
-                        data_test, target_test = data_test.cuda(), target_test.cuda()
+                        data_test, target_test = data_test.to(self.device), target_test.to(self.device)
                         # 前向传播
                         output = self.net(data_test)
                         # 获取预测结果
@@ -250,48 +258,88 @@ class GA:
     """
 
     def __init__(self, cp_num=9, fc_num=3, population_size=50) -> None:
+        self.__population_size = population_size
+        self.__max_pop = population_size
         self.population = []
-        self.init_population(cp_num, fc_num, population_size)
+        self.cp_num = cp_num
+        self.fc_num = fc_num
+        self.__init_population(cp_num, fc_num, population_size)
 
-    def init_population(self, cp_num, fc_num, population_size):
+    def evo(self, train_loader, test_loader, generation=3, epoch=20):
+        # 还需要保存网络结构及参数
+        for generate in range(generation):
+            print(f'\n**************Generation{generate + 1}**************\n')
+            self.eval(train_loader, test_loader, epoch, generation=generate)
+            self.population = self.__offspring_generate(offspring_size=self.__population_size)
+
+        sorted_pop = sorted(self.population, key=lambda x: x['accuracy'], reverse=True)
+        return sorted_pop[0]
+
+    def __init_population(self, cp_num, fc_num, population_size):
         for idx in range(population_size):
-            child = Child(cp_num, fc_num)
-            individual = {'index': idx,
-                          'individual': child,
-                          'accuracy': 0}
+            individual = self.__create_individual(idx, cp_num, fc_num)
             self.population.append(individual)
 
-    def eval(self, train_loader, test_loader, epoch=20):
-        for idx in range(len(self.population)):
-            child = self.population[idx]['child']
-            accuracy = child.fitness_eval(train_loader, test_loader, epoch)
-            self.population[idx]['accuracy'] = accuracy
+    def __create_individual(self, idx, cp_num=9, fc_num=3) -> dict:
+        child = Child(cp_num, fc_num)
+        individual = {'index': idx,
+                      'individual': child,
+                      'accuracy': 0}
+        return individual
 
-    def binary_tournament_select(self, non_elites, select_num):
+    def eval(self, train_loader, test_loader, epoch=20, **kwargs):
+        for idx in range(len(self.population)):
+            child = self.population[idx]['individual']
+            try:
+                accuracy = child.fitness_eval(train_loader, test_loader, epoch,
+                                              idx=self.population[idx]['index'], **kwargs)
+                self.population[idx]['accuracy'] = accuracy
+            except:
+                self.population = (self.population[0:idx] + self.population[idx+1:])
+                self.__max_pop += 1
+                individual = self.__create_individual(self.__max_pop, self.cp_num, self.fc_num)
+                accuracy = individual['individual'].fitness_eval(train_loader, test_loader, epoch,
+                                            idx=self.population[idx]['index'], **kwargs)
+                individual['accuracy'] = accuracy
+                self.population.append(individual)
+
+    @staticmethod
+    def compete(competitors):
+        if competitors[0]['accuracy'] > competitors[1]['accuracy']:
+            return competitors[0]
+        else:
+            return competitors[1]
+
+    def __binary_tournament_select(self, non_elites, select_num):
         other = []
-        compete = lambda competitors: max(competitors, key=competitors['accuracy'])
         for _ in range(select_num):
             parent = np.random.choice(non_elites, 2)
-            other.append(compete(parent))
+            other.append(self.compete(parent))
         return other
 
-    def offspring_generate(self):
+    def __offspring_generate(self, offspring_size=50):
         offsprings = []
-        mating_pool = self.environment_select()
-        while len(mating_pool) > 0:
-            parent1, parent2 = np.random.choice(mating_pool, 2)
+        mating_pool = self.__environment_select()
+        while len(mating_pool) > 0 and len(offsprings) <= offspring_size:
+            parent1, parent2 = np.random.choice(mating_pool, 2, replace=False)
             mating_pool.remove(parent1)
             mating_pool.remove(parent2)
-            os1, os2 = self.crossover(parent1, parent2)
-            os1.mutate()
-            os2.mutate()
-            offsprings.append(os1)
-            offsprings.append(os2)
+            self.__crossover(parent1['individual'], parent2['individual'])
+            parent1['individual'].mutate()
+            parent2['individual'].mutate()
+
+            self.__max_pop += 1
+            parent1['index'] = self.__max_pop
+            self.__max_pop += 1
+            parent2['index'] = self.__max_pop
+
+            offsprings.append(parent1)
+            offsprings.append(parent2)
         return offsprings
 
-    def crossover(self,
-                  parent1: Child,
-                  parent2: Child) -> (Child, Child):
+    def __crossover(self,
+                    parent1: Child,
+                    parent2: Child) -> (Child, Child):
         for idx in range(min(len(parent1.conv_li), len(parent2.conv_li))):
             if np.random.rand() > 0.5:
                 exec(f"parent1.net.conv_pool.conv{idx}.out_channels, "
@@ -316,13 +364,13 @@ class GA:
         parent1.net_format()
         parent2.net_format()
 
-    def environment_select(self):
+    def __environment_select(self):
         # 按照适应度从大到小排序
         sorted_pop = sorted(self.population, key=lambda x: x['accuracy'], reverse=True)
         # 选择20%精英个体
         elite_num = int(0.2 * len(self.population))
         elites = sorted_pop[:elite_num]
         # binary_tournament_select选择其他个体
-        non_elites = self.binary_tournament_select(sorted_pop[elite_num:], len(self.population) - elite_num)
+        non_elites = self.__binary_tournament_select(sorted_pop[elite_num:], len(self.population) - elite_num)
         # 返回精英个体和其他个体
         return elites + non_elites

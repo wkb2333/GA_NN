@@ -7,15 +7,17 @@ from torchvision import datasets, transforms
 # 加载数据集
 train_dataset = datasets.MNIST(root='./data', train=True, transform=transforms.ToTensor(), download=True)
 test_dataset = datasets.MNIST(root='./data', train=False, transform=transforms.ToTensor())
-train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
-child = Child()
-print(child)
-conv = 'conv0'
-exec(f'child.net.conv_pool.{conv}.out_channels = 18')
-print(child)
-accuracy = child.fitness_eval(train_loader, test_loader, epoch=1)
+# child = Child()
+# print(child)
+# print(child.fitness_eval(train_loader, test_loader, epoch=2))
+# for _ in range(20):
+#     child.mutate()
+#
+# print(child)
+# print(child.fitness_eval(train_loader, test_loader, epoch=2))
 
-# ga = GA(20, 1, 200)
-# ga.eval(train_loader, test_loader, epoch=1)
+ga = GA(cp_num=5, fc_num=2, population_size=20)
+ga.evo(train_loader, test_loader, generation=5, epoch=1)
