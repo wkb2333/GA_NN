@@ -205,23 +205,22 @@ class Child(nn.Module):
                      epoch=20, **kwargs):
         # 训练模型
         with tqdm(total=epoch) as pbar:
-            pbar.set_description(f"Index={kwargs['idx']},"
+            pbar.set_description(f"Individual={kwargs['idx']},"
                                  f"total parameters: {sum(p.numel() for p in self.net.parameters())/1000}k")
             for batch_idx, (data, target) in enumerate(train_loader):
                 # 将数据转换为模型需要的格式
-                if batch_idx >= epoch:
-                    break
-                data, target = data.to(self.device), target.to(self.device)
-                # 前向传播
-                output = self.net(data)
-                # 计算损失
-                criterion = nn.CrossEntropyLoss()
-                loss = criterion(output, target)
-                # 反向传播
-                optimizer = optim.Adam(self.net.parameters())
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                while batch_idx < epoch:
+                    data, target = data.to(self.device), target.to(self.device)
+                    # 前向传播
+                    output = self.net(data)
+                    # 计算损失
+                    criterion = nn.CrossEntropyLoss()
+                    loss = criterion(output, target)
+                    # 反向传播
+                    optimizer = optim.Adam(self.net.parameters())
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
                 # 评估模型
                 correct = 0
                 total = 0
@@ -265,19 +264,24 @@ class GA:
         self.fc_num = fc_num
         self.__init_population(cp_num, fc_num, population_size)
 
-    def evo(self, train_loader, test_loader, generation=3, epoch=20):
+    def evo(self, train_loader, test_loader, generation=3, epoch=20) -> Child:
         # 还需要保存网络结构及参数
         for generate in range(generation):
             print(f'\n**************Generation{generate + 1}**************\n')
             self.eval(train_loader, test_loader, epoch, generation=generate)
             self.population = self.__offspring_generate(offspring_size=self.__population_size)
 
-        sorted_pop = sorted(self.population, key=lambda x: x['accuracy'], reverse=True)
-        return sorted_pop[0]
+            sorted_pop = sorted(self.population, key=lambda x: x['accuracy'], reverse=True)
+            for idx in range(len(sorted_pop)):
+                print(f"第{idx+1}好的模型：accuracy={sorted_pop[idx]['accuracy']}")
+                print(sorted_pop[idx]['individual'])
+        return sorted_pop[0]['individual']
 
     def __init_population(self, cp_num, fc_num, population_size):
         for idx in range(population_size):
-            individual = self.__create_individual(idx, cp_num, fc_num)
+            individual = self.__create_individual(idx,
+                                                  np.random.randint(3, 15),
+                                                  np.random.randint(2, 6))
             self.population.append(individual)
 
     def __create_individual(self, idx, cp_num=9, fc_num=3) -> dict:
